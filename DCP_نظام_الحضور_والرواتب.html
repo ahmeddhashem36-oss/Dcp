@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام إدارة الحضور والرواتب المتقدم - DCP</title>
+    <!-- مكتبة Supabase للربط السحابي -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #ca8a04;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --border: #cbd5e1;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+            direction: rtl;
+        }
+        header {
+            background: var(--primary);
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .container {
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 0 15px;
+        }
+        .card {
+            background: var(--card);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        button:hover { opacity: 0.9; }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        .hidden { display: none !important; }
+        .flex { display: flex; gap: 10px; flex-wrap: wrap; }
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: white;
+        }
+        .bg-success { background: var(--success); }
+        .bg-danger { background: var(--danger); }
+        .bg-warning { background: var(--warning); }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid var(--border);
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+        }
+        th { background: #f1f5f9; }
+        footer {
+            text-align: center;
+            padding: 15px;
+            font-size: 13px;
+            color: #64748b;
+        }
+        video, canvas {
+            width: 100%;
+            max-width: 320px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        .user-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid var(--border);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h2>شركة DCP - النظام السحابي الموحد</h2>
+        <div id="user-info">مدير النظام: أحمد هاشم</div>
+    </header>
+
+    <div class="container">
+        <!-- شاشة تسجيل الدخول الشخصية -->
+        <div id="login-screen" class="card">
+            <h3>تسجيل الدخول إلى النظام</h3>
+            <label>اختر صفة الدخول:</label>
+            <select id="login-role" onchange="toggleRoleFields()">
+                <option value="admin">مدير النظام (الإدارة)</option>
+                <option value="employee">موظف</option>
+                <option value="contractor">مقاول</option>
+            </select>
+
+            <!-- دخول المدير -->
+            <div id="admin-fields">
+                <input type="password" id="admin-pass" placeholder="كلمة مرور المدير">
+                <button onclick="handleAdminLogin()" style="width:100%; margin-top: 10px;">دخول المدير</button>
+            </div>
+
+            <!-- دخول الموظفين / المقاولين -->
+            <div id="user-fields" class="hidden">
+                <div style="text-align:center; margin: 15px 0;">
+                    <p style="font-weight:bold; color:var(--primary);">هل تمتلك حساباً مسجلاً في النظام؟</p>
+                    <div class="flex">
+                        <button onclick="showUserOption('login')" style="flex:1; background:#16a34a;">نعم، لدي حساب بالفعل</button>
+                        <button onclick="showUserOption('code')" style="flex:1; background:#2563eb;">لا، إنشاء حساب جديد لأول مرة</button>
+                    </div>
+                </div>
+
+                <!-- خيار 1: إدخال كود التسجيل لأول مرة -->
+                <div id="sub-tab-code" class="hidden" style="background:#f1f5f9; padding:15px; border-radius:8px;">
+                    <h4>رمز الانضمام الأولي</h4>
+                    <input type="password" id="join-code" placeholder="أدخل كود الانضمام (0000 للموظفين أو 1111 للمقاولين)">
+                    <button onclick="verifyJoinCode()" style="width:100%; margin-top: 5px;">تأكيد الكود للانتقال لإنشاء الحساب</button>
+                </div>
+
+                <!-- نموذج إنشاء حساب جديد بعد التأكد من الكود -->
+                <div id="sub-tab-register" class="hidden" style="background:#f1f5f9; padding:15px; border-radius:8px;">
+                    <h4 style="color:var(--primary);">إنشاء حساب جديد</h4>
+                    <input type="text" id="reg-name" placeholder="الاسم الكامل">
+                    <input type="text" id="reg-phone" placeholder="رقم الهاتف (سيكون اسم المستخدم الخاص بك)">
+                    <input type="password" id="reg-pass" placeholder="كلمة المرور">
+                    <label style="font-size:13px; font-weight:bold; display:block; margin-top:8px;">رفع الصورة الشخصية:</label>
+                    <input type="file" id="reg-photo" accept="image/*" onchange="previewPhoto(this)">
+                    <button onclick="registerNewUser()" class="bg-success" style="width:100%; margin-top: 10px;">إنشاء الحساب والتسجيل</button>
+                </div>
+
+                <!-- خيار 2: تسجيل الدخول لمن لديه حساب سابقاً -->
+                <div id="sub-tab-login" class="hidden" style="background:#f1f5f9; padding:15px; border-radius:8px;">
+                    <h4 style="color:var(--success);">تسجيل الدخول المباشر</h4>
+                    <input type="text" id="user-phone" placeholder="رقم الهاتف">
+                    <input type="password" id="user-pass" placeholder="كلمة المرور">
+                    <button onclick="handleUserLogin()" style="width:100%; margin-top: 10px; background:#16a34a;">تسجيل الدخول</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- لوحة تحكم المدير -->
+        <div id="admin-dashboard" class="card hidden">
+            <h2>لوحة تحكم المدير المركزي</h2>
+            <div class="flex" style="margin-bottom: 15px;">
+                <button onclick="switchAdminTab('employees')">إدارة الموظفين والرواتب</button>
+                <button onclick="switchAdminTab('contractors')">إدارة المقاولين</button>
+                <button onclick="switchAdminTab('logs')">سجلات الحضور الحية</button>
+                <button onclick="switchAdminTab('settings')" style="background: #475569;">إعدادات الموقع والمدير</button>
+                <button onclick="logout()" class="bg-danger">تسجيل الخروج</button>
+            </div>
+            <div id="admin-content"></div>
+        </div>
+
+        <!-- لوحة الموظف / المقاول -->
+        <div id="portal-dashboard" class="card hidden">
+            <div class="flex" style="align-items:center; gap:15px; margin-bottom:15px;">
+                <img id="portal-avatar" class="user-avatar" style="width:60px; height:60px;" src="" alt="صورة المستخدم">
+                <h2 id="portal-title" style="margin:0;">بوابة المستخدم</h2>
+            </div>
+            
+            <!-- كاميرا التقاط الصور للحضور -->
+            <div style="text-align: center; margin-bottom:15px; background:#f8fafc; padding:10px; border-radius:8px;">
+                <p style="font-size:13px; color:#64748b; margin:5px 0;">سيتم أخذ صورة حية وتأكيد الموقع الجغرافي (GPS) بدقة عالية عند التسجيل</p>
+                <video id="webcam" autoplay playsinline></video>
+                <canvas id="canvas" class="hidden"></canvas>
+            </div>
+
+            <div id="portal-actions" class="flex" style="justify-content: center;">
+                <button onclick="recordAttendanceWithGPS('حضور')" class="bg-success" style="flex:1; padding:15px; font-size:16px;">تسجيل حضور</button>
+                <button onclick="recordAttendanceWithGPS('انصراف')" class="bg-danger" style="flex:1; padding:15px; font-size:16px;">تسجيل انصراف</button>
+            </div>
+
+            <div style="margin-top: 20px;" id="user-extra-section">
+                <h3>طلب سلفة مالية</h3>
+                <input type="number" id="advance-amount" placeholder="مبلغ السلفة المطلوبة (د.ع)">
+                <button onclick="requestAdvance()" class="bg-warning">إرسال طلب السلفة</button>
+            </div>
+            <hr style="margin: 20px 0;">
+            <button onclick="logout()" style="background:#64748b;">تسجيل الخروج</button>
+        </div>
+    </div>
+
+    <footer>
+        تم تطوير النظام بواسطة: <strong>أحمد هاشم</strong> ©️ 2026
+    </footer>
+
+    <script>
+        const SUPABASE_URL = 'https://mhipuuxtrfnccquytajv.supabase.co';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1oaXB1dXh0cmZuY2NxdXl0YWp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5MDcxMjcsImV4cCI6MjA5MTQ4MzEyN30.YOUR_KEY_HERE');
+
+        const DEFAULT_EMP_CODE = '0000';
+        const DEFAULT_CON_CODE = '1111';
+        let uploadedPhotoBase64 = '';
+
+        function getAdminPassword() {
+            return localStorage.getItem('dcp_admin_pass') || 'A@2519a2000';
+        }
+
+        function toggleRoleFields() {
+            const role = document.getElementById('login-role').value;
+            if (role === 'admin') {
+                document.getElementById('admin-fields').classList.remove('hidden');
+                document.getElementById('user-fields').classList.add('hidden');
+            } else {
+                document.getElementById('admin-fields').classList.add('hidden');
+                document.getElementById('user-fields').classList.remove('hidden');
+            }
+        }
+
+        function showUserOption(opt) {
+            document.getElementById('sub-tab-code').classList.add('hidden');
+            document.getElementById('sub-tab-register').classList.add('hidden');
+            document.getElementById('sub-tab-login').classList.add('hidden');
+
+            if (opt === 'code') document.getElementById('sub-tab-code').classList.remove('hidden');
+            if (opt === 'login') document.getElementById('sub-tab-login').classList.remove('hidden');
+        }
+
+        function verifyJoinCode() {
+            const code = document.getElementById('join-code').value;
+            const role = document.getElementById('login-role').value;
+            const targetCode = role === 'employee' ? DEFAULT_EMP_CODE : DEFAULT_CON_CODE;
+
+            if (code === targetCode) {
+                alert('كود صحيح! يمكنك الآن تعبئة بياناتك الشخصية وإنشاء حسابك.');
+                document.getElementById('sub-tab-code').classList.add('hidden');
+                document.getElementById('sub-tab-register').classList.remove('hidden');
+            } else {
+                alert('كود الانضمام غير صحيح!');
+            }
+        }
+
+        function previewPhoto(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    uploadedPhotoBase64 = e.target.result;
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        async function registerNewUser() {
+            const role = document.getElementById('login-role').value;
+            const name = document.getElementById('reg-name').value;
+            const phone = document.getElementById('reg-phone').value;
+            const pass = document.getElementById('reg-pass').value;
+
+            if(!name || !phone || !pass) return alert('الرجاء إدخال كافة البيانات المطلوبة');
+
+            const tableName = role === 'employee' ? 'employees' : 'contractors';
+            const payload = { 
+                name: name, 
+                phone: phone, 
+                pass: pass, 
+                photo: uploadedPhotoBase64,
+                salary: 0,
+                deductions: 0
+            };
+
+            const { data, error } = await supabaseClient.from(tableName).insert([payload]);
+
+            if (error) {
+                alert('حدث خطأ أثناء التسجيل، ربما رقم الهاتف مسجل مسبقاً.');
+            } else {
+                alert('تم إنشاء حسابك بنجاح! يمكنك الآن تسجيل الدخول برقم الهاتف وكلمة المرور مباشرة.');
+                showUserOption('login');
+                document.getElementById('user-phone').value = phone;
+            }
+        }
+
+        async function handleAdminLogin() {
+            const pass = document.getElementById('admin-pass').value;
+            if (pass === getAdminPassword()) {
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('admin-dashboard').classList.remove('hidden');
+                loadAdminData('employees');
+                initRealtimeLogs();
+            } else {
+                alert('كلمة مرور المدير غير صحيحة');
+            }
+        }
+
+        async function handleUserLogin() {
+            const role = document.getElementById('login-role').value;
+            const phone = document.getElementById('user-phone').value;
+            const pass = document.getElementById('user-pass').value;
+            const tableName = role === 'employee' ? 'employees' : 'contractors';
+            
+            const { data, error } = await supabaseClient
+                .from(tableName)
+                .select('*')
+                .eq('phone', phone)
+                .eq('pass', pass)
+                .single();
+
+            if (error || !data) {
+                alert('رقم الهاتف أو كلمة المرور غير صحيحة');
+            } else {
+                window.currentUser = data;
+                window.currentUserRole = role;
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('portal-dashboard').classList.remove('hidden');
+                document.getElementById('portal-title').innerText = `أهلاً بك، ${data.name}`;
+                if(data.photo) document.getElementById('portal-avatar').src = data.photo;
+                startCamera();
+                if(role === 'contractor') {
+                    document.getElementById('user-extra-section').style.display = 'none';
+                }
+            }
+        }
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                document.getElementById('webcam').srcObject = stream;
+            } catch (err) {
+                console.log('الكاميرا غير متاحة');
+            }
+        }
+
+        function captureImage() {
+            const video = document.getElementById('webcam');
+            const canvas = document.getElementById('canvas');
+            canvas.width = video.videoWidth || 320;
+            canvas.height = video.videoHeight || 240;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', 0.5);
+        }
+
+        // تسجيل الحضور والتحقق من الموقع بدقة عالية جداً
+        async function recordAttendanceWithGPS(type) {
+            if (!navigator.geolocation) return alert('الـ GPS غير مدعوم في متصفحك');
+
+            const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+
+            navigator.geolocation.getCurrentPosition(async (position) => {
+                const userLat = position.coords.latitude;
+                const userLng = position.coords.longitude;
+
+                const targetLat = parseFloat(localStorage.getItem('dcp_target_lat') || '0');
+                const targetLng = parseFloat(localStorage.getItem('dcp_target_lng') || '0');
+                const allowedRadius = parseFloat(localStorage.getItem('dcp_target_radius') || '500');
+
+                if(targetLat !== 0 && targetLng !== 0) {
+                    const distance = getDistanceInMeters(userLat, userLng, targetLat, targetLng);
+                    if (distance > allowedRadius) {
+                        return alert(`عذراً، أنت خارج نطاق موقع العمل! المسافة بينك وبين مقر العمل: ${Math.round(distance)} متر.`);
+                    }
+                }
+
+                const photoData = captureImage();
+                const now = new Date();
+                const date = now.toLocaleDateString('ar-EG');
+                const time = now.toLocaleTimeString('ar-EG');
+                
+                const { error } = await supabaseClient.from('attendance_logs').insert([{
+                    name: window.currentUser.name,
+                    type: type,
+                    date: date,
+                    time: time,
+                    photo: photoData,
+                    timestamp: now.getTime()
+                }]);
+
+                if(error) alert('حدث خطأ أثناء حفظ التسجيل');
+                else alert(`تم تسجيل ${type} بنجاح مع أخذ الصورة وتحديد الموقع الميداني!`);
+            }, (err) => {
+                alert('يرجى تفعيل خدمة الموقع (GPS) وتزويد المتصفح بالإذن.');
+            }, options);
+        }
+
+        function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        async function loadAdminData(type) {
+            window.currentAdminTab = type;
+            const content = document.getElementById('admin-content');
+            
+            if (type === 'employees' || type === 'contractors') {
+                const { data } = await supabaseClient.from(type).select('*');
+                let html = `<h3>سجل ${type === 'employees' ? 'الموظفين والرواتب' : 'المقاولين المسجلين'}</h3>`;
+                
+                html += `<table><tr><th>الصورة</th><th>الاسم</th><th>الهاتف</th>`;
+                if(type === 'employees') html += `<th>الراتب الأساسي</th><th>الخصومات</th><th>الصافي</th><th>تعديل المالي</th>`;
+                html += `<th>إجراءات</th></tr>`;
+                
+                (data || []).forEach(item => {
+                    const imgHtml = item.photo ? `<img src="${item.photo}" class="user-avatar">` : 'بدون صورة';
+                    const netSalary = type === 'employees' ? ((item.salary || 0) - (item.deductions || 0)) : '-';
+                    
+                    html += `<tr>
+                        <td>${imgHtml}</td>
+                        <td>${item.name}</td>
+                        <td>${item.phone}</td>`;
+                    
+                    if(type === 'employees') {
+                        html += `
+                            <td><input type="number" id="sal-${item.id}" value="${item.salary || 0}" style="width:90px;"></td>
+                            <td><input type="number" id="ded-${item.id}" value="${item.deductions || 0}" style="width:90px;"></td>
+                            <td><strong>${netSalary} د.ع</strong></td>
+                            <td><button onclick="updateSalary('${item.id}')" class="bg-success">حفظ الراتب</button></td>
+                        `;
+                    }
+                    html += `<td><button onclick="deleteUser('${type}', '${item.id}')" class="bg-danger">حذف الحساب</button></td></tr>`;
+                });
+                html += `</table>`;
+                content.innerHTML = html;
+            } else if (type === 'logs') {
+                const { data } = await supabaseClient.from('attendance_logs').select('*').order('created_at', { ascending: false });
+                let html = `<h3>سجلات الحضور والانصراف والصور الحية</h3>`;
+                html += `<table><tr><th>الاسم</th><th>الحركة</th><th>التاريخ والوقت</th><th>صورة اللحظة</th></tr>`;
+                (data || []).forEach(log => {
+                    const imgHtml = log.photo ? `<img src="${log.photo}" class="user-avatar">` : 'لا توجد';
+                    html += `<tr><td>${log.name}</td><td><span class="badge ${log.type === 'حضور' ? 'bg-success' : 'bg-danger'}">${log.type}</span></td><td>${log.date} - ${log.time}</td><td>${imgHtml}</td></tr>`;
+                });
+                html += `</table>`;
+                content.innerHTML = html;
+            } else if (type === 'settings') {
+                const currentLat = localStorage.getItem('dcp_target_lat') || '';
+                const currentLng = localStorage.getItem('dcp_target_lng') || '';
+                const currentRadius = localStorage.getItem('dcp_target_radius') || '500';
+
+                content.innerHTML = `
+                    <h3>إعدادات الموقع الميداني وتغيير كلمة المرور</h3>
+                    <div style="background:#f1f5f9; padding:15px; border-radius:6px; max-width:500px; margin-bottom:15px;">
+                        <h4>تحديد موقع العمل للحضور والإنصراف (GPS):</h4>
+                        <label>خط العرض (Latitude):</label>
+                        <input type="text" id="target-lat" value="${currentLat}" placeholder="مثال: 33.3152">
+                        <label>خط الطول (Longitude):</label>
+                        <input type="text" id="target-lng" value="${currentLng}" placeholder="مثال: 44.3661">
+                        <label>نطاق المساحة المسموحة (بالأمتار):</label>
+                        <input type="number" id="target-radius" value="${currentRadius}" placeholder="مثال: 300">
+                        <button onclick="setCurrentLocationAsTarget()" style="background:#475569; margin-top:5px;">تحديد موقعي الحالي كمقر عمل بدقة</button>
+                        <button onclick="saveGPSSettings()" style="margin-top:10px;">حفظ موقع العمل</button>
+                    </div>
+                    <div style="background:#f1f5f9; padding:15px; border-radius:6px; max-width:500px;">
+                        <h4>تغيير كلمة مرور المدير:</h4>
+                        <input type="password" id="change-pass-input" placeholder="كلمة المرور الجديدة">
+                        <button onclick="updateAdminPassword()" style="margin-top:10px;">حفظ كلمة المرور</button>
+                    </div>
+                `;
+            }
+        }
+
+        async function updateSalary(empId) {
+            const salary = parseFloat(document.getElementById(`sal-${empId}`).value) || 0;
+            const deductions = parseFloat(document.getElementById(`ded-${empId}`).value) || 0;
+
+            const { error } = await supabaseClient.from('employees').update({ salary, deductions }).eq('id', empId);
+            if(error) alert('حدث خطأ في تحديث البيانات المالية');
+            else {
+                alert('تم تثبيت وتعديل الراتب والخصومات بنجاح!');
+                loadAdminData('employees');
+            }
+        }
+
+        // جلب الإحداثيات الفعلية بدقة عالية
+        function setCurrentLocationAsTarget() {
+            if(!navigator.geolocation) return alert('الـ GPS غير مدعوم');
+            
+            const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+            
+            navigator.geolocation.getCurrentPosition(pos => {
+                document.getElementById('target-lat').value = pos.coords.latitude;
+                document.getElementById('target-lng').value = pos.coords.longitude;
+                alert(`تم التقاط إحداثيات موقعك بدقة (±${Math.round(pos.coords.accuracy)} متر).\nيرجى الضغط على زر حفظ موقع العمل الآن.`);
+            }, err => {
+                alert('فشل جلب الموقع، تأكد من تفعيل الـ GPS وصلاحية المتصفح.');
+            }, options);
+        }
+
+        function saveGPSSettings() {
+            localStorage.setItem('dcp_target_lat', document.getElementById('target-lat').value);
+            localStorage.setItem('dcp_target_lng', document.getElementById('target-lng').value);
+            localStorage.setItem('dcp_target_radius', document.getElementById('target-radius').value);
+            alert('تم حفظ إحداثيات ومجال موقع العمل بنجاح!');
+        }
+
+        function updateAdminPassword() {
+            const newPass = document.getElementById('change-pass-input').value;
+            if(!newPass || newPass.length < 6) return alert('أدخل كلمة مرور صالحة (لا تقل عن 6 رموز)');
+            localStorage.setItem('dcp_admin_pass', newPass);
+            alert('تم تحديث كلمة مرور المدير بنجاح!');
+        }
+
+        async function deleteUser(type, id) {
+            if(confirm('هل أنت متأكد من حذف هذا الحساب؟')) {
+                await supabaseClient.from(type).delete().eq('id', id);
+                loadAdminData(type);
+            }
+        }
+
+        async function requestAdvance() {
+            const amount = parseFloat(document.getElementById('advance-amount').value);
+            if(!amount || amount <= 0) return alert('الرجاء إدخال مبلغ صحيح');
+
+            const { error } = await supabaseClient.from('advance_requests').insert([{
+                id: Date.now(),
+                name: window.currentUser.name,
+                amount: amount,
+                status: 'معلق',
+                time: new Date().toLocaleString('ar-EG')
+            }]);
+
+            if(error) alert('خطأ في إرسال طلب السلفة');
+            else {
+                alert('تم تقديم طلب السلفة بنجاح للإدارة');
+                document.getElementById('advance-amount').value = '';
+            }
+        }
+
+        function switchAdminTab(tab) {
+            loadAdminData(tab);
+        }
+
+        function logout() {
+            location.reload();
+        }
+
+        function initRealtimeLogs() {
+            supabaseClient
+                .channel('public:attendance_logs')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance_logs' }, payload => {
+                    if (window.currentAdminTab === 'logs') {
+                        loadAdminData('logs');
+                    }
+                })
+                .subscribe();
+        }
+    </script>
+</body>
+</html>
